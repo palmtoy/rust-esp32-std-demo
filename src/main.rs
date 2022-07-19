@@ -264,7 +264,7 @@ fn main() -> Result<()> {
         None,
     )?))?;
 
-    test_tcp()?;
+    // test_tcp()?;
 
     test_tcp_bind()?;
 
@@ -458,6 +458,7 @@ fn test_fs() -> Result<()> {
     Ok(())
 }
 
+/*
 fn test_tcp() -> Result<()> {
     info!("About to open a TCP connection to 1.1.1.1 port 80");
 
@@ -483,6 +484,7 @@ fn test_tcp() -> Result<()> {
 
     Ok(())
 }
+*/
 
 fn test_tcp_bind() -> Result<()> {
     fn test_tcp_bind_accept() -> Result<()> {
@@ -731,7 +733,7 @@ mod experimental {
         use embedded_svc::io::Bytes;
         use esp_idf_svc::http::client::*;
 
-        let url = String::from("https://google.com");
+        let url = String::from("https://www.baidu.com");
 
         info!("About to fetch content from {}", url);
 

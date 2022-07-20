@@ -1117,9 +1117,11 @@ fn httpd(mutex: Arc<(Mutex<Option<u32>>, Condvar)>) -> Result<idf::Server> {
                 .status_message("No permissions")
                 .body("You have no permissions to access this page".into())
                 .into()
-        })?
+        })?;
+        /*
         .at("/panic")
         .get(|_| panic!("User requested a panic!"))?;
+        */
 
     #[cfg(esp32s2)]
     let server = httpd_ulp_endpoints(server, mutex)?;

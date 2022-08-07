@@ -3,9 +3,11 @@ use log::*;
 use std::sync::{Condvar, Mutex};
 use std::{env, sync::Arc, thread, time::*};
 
+use embedded_svc::httpd::registry::Registry;
 use embedded_svc::httpd::*;
 use embedded_svc::wifi::*;
 
+use esp_idf_svc::httpd as idf;
 use esp_idf_svc::netif::*;
 use esp_idf_svc::nvs::*;
 use esp_idf_svc::sysloop::*;
@@ -43,9 +45,7 @@ fn main() -> Result<()> {
     )?;
 
     let mutex = Arc::new((Mutex::new(None), Condvar::new()));
-
     let http_srv = start_http_srv(mutex.clone())?;
-
     let mut wait = mutex.0.lock().unwrap();
 
     #[allow(unused)]
@@ -80,6 +80,29 @@ fn main() -> Result<()> {
 
 #[allow(unused_variables)]
 #[cfg(feature = "experimental")]
+fn start_http_srv(mutex: Arc<(Mutex<Option<u32>>, Condvar)>) -> Result<idf::Server> {
+    let server = idf::ServerRegistry::new()
+        .at("/")
+        .get(|_| {
+            let html = index_html();
+            Ok(html.into())
+        })?
+        .at("/foo")
+        .get(|_| bail!("Boo, something happened!"))?
+        .at("/bar")
+        .get(|_| {
+            Response::new(403)
+                .status_message("No permissions")
+                .body("You have no permissions to access this page".into())
+                .into()
+        })?;
+
+    server.start(&Default::default())
+}
+
+/*
+#[allow(unused_variables)]
+#[cfg(feature = "experimental")]
 fn start_http_srv(
     mutex: Arc<(Mutex<Option<u32>>, Condvar)>,
 ) -> Result<esp_idf_svc::http::server::EspHttpServer> {
@@ -96,6 +119,7 @@ fn start_http_srv(
 
     Ok(server)
 }
+*/
 
 #[cfg(not(feature = "qemu"))]
 #[allow(dead_code)]

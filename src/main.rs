@@ -22,6 +22,8 @@ const SSID: &str = env!("RUST_ESP32_STD_DEMO_WIFI_SSID");
 #[cfg(not(feature = "qemu"))]
 const PASS: &str = env!("RUST_ESP32_STD_DEMO_WIFI_PASS");
 
+static mut G_LED_ON: bool = false;
+
 fn main() -> Result<()> {
     esp_idf_sys::link_patches();
     println!("Hello from Rust!");
@@ -81,12 +83,38 @@ fn main() -> Result<()> {
 #[allow(unused_variables)]
 #[cfg(feature = "experimental")]
 fn start_http_srv(mutex: Arc<(Mutex<Option<u32>>, Condvar)>) -> Result<idf::Server> {
+    let route_root_closure = |_| {
+        let html = index_html();
+        Ok(html.into())
+    };
+
+    let route_led_closure = |req: Request| {
+        let now = get_cur_time();
+        let mut html = templated(format!("{} ~ Invalid cmd!", now));
+        match req.query_string() {
+            Some(query_str) => {
+                if query_str == "off" {
+                    unsafe {
+                        G_LED_ON = false;
+                    }
+                    html = templated(format!("{} ~ The LED is off.", now));
+                } else if query_str == "on" {
+                    unsafe {
+                        G_LED_ON = true;
+                    }
+                    html = templated(format!("{} ~ The LED is fading in/out ...", now));
+                }
+            }
+            None => {}
+        }
+        Ok(html.into())
+    };
+
     let server = idf::ServerRegistry::new()
         .at("/")
-        .get(|_| {
-            let html = index_html();
-            Ok(html.into())
-        })?
+        .get(route_root_closure)?
+        .at("/led")
+        .get(route_led_closure)?
         .at("/foo")
         .get(|_| bail!("Boo, something happened!"))?
         .at("/bar")

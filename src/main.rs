@@ -1,19 +1,22 @@
-use anyhow::bail;
 use log::*;
+use anyhow::bail;
 use std::sync::{Condvar, Mutex};
 use std::{env, sync::Arc, thread, time::*};
 
-use embedded_svc::httpd::registry::Registry;
-use embedded_svc::httpd::*;
 use embedded_svc::wifi::*;
-
-use esp_idf_svc::httpd as idf;
-use esp_idf_svc::netif::*;
-use esp_idf_svc::nvs::*;
-use esp_idf_svc::sysloop::*;
-use esp_idf_svc::wifi::*;
+use embedded_svc::httpd::*;
+use embedded_svc::httpd::registry::Registry;
 
 use esp_idf_sys::{self};
+use esp_idf_svc::nvs::*;
+use esp_idf_svc::wifi::*;
+use esp_idf_svc::netif::*;
+use esp_idf_svc::sysloop::*;
+use esp_idf_svc::httpd as idf;
+
+use esp_idf_hal::prelude::*;
+use esp_idf_hal::peripherals::Peripherals;
+use esp_idf_hal::ledc::{config::TimerConfig, Channel, Timer};
 
 #[allow(dead_code)]
 #[cfg(not(feature = "qemu"))]
@@ -48,6 +51,40 @@ fn main() -> Result<()> {
 
     let mutex = Arc::new((Mutex::new(None), Condvar::new()));
     let http_srv = start_http_srv(mutex.clone())?;
+
+    thread::spawn(|| -> anyhow::Result<()> {
+        let peripherals = Peripherals::take().unwrap();
+        let config = TimerConfig::default().frequency(25.kHz().into());
+        let timer = Timer::new(peripherals.ledc.timer0, &config)?;
+        let mut channel = Channel::new(peripherals.ledc.channel0, &timer, peripherals.pins.gpio4)?;
+        let max_duty = channel.get_max_duty();
+        let max_num = 33;
+        let duty_interval = 2000 / max_num; // 2s
+        loop {
+            for numerator in 0..(max_num + 1) {
+                unsafe {
+                    if !G_LED_ON {
+                        channel.set_duty(0)?;
+                        break;
+                    }
+                }
+                channel.set_duty(max_duty * numerator / max_num)?;
+                thread::sleep(Duration::from_millis(duty_interval.into()));
+            }
+            for numerator in (0..(max_num + 1)).rev() {
+                unsafe {
+                    if !G_LED_ON {
+                        channel.set_duty(0)?;
+                        break;
+                    }
+                }
+                channel.set_duty(max_duty * numerator / max_num)?;
+                thread::sleep(Duration::from_millis(duty_interval.into()));
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+    });
+
     let mut wait = mutex.0.lock().unwrap();
 
     #[allow(unused)]

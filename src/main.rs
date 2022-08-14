@@ -156,14 +156,40 @@ fn start_http_srv(
 
     server.handle_post("/wifi_config", |mut req, resp| {
         let now = get_cur_time();
-        let html = html_templated(format!("{} ~ /wifi_config OK", now));
+        let mut html = html_templated(format!("{} ~ /wifi_config OK", now));
         let mut buf = Vec::new();
-        ToStd::new(req.reader()).read_to_end(&mut buf)?;
-        let body = String::from_utf8(buf).expect("Invalid UTF-8 sequence in path:/wifi_config");
-        println!(
-            "{} ~ Got a request path:/wifi_config with body {}",
-            now, body
-        );
+        match ToStd::new(req.reader()).read_to_end(&mut buf) {
+            Ok(_) => {}
+            Err(e) => {
+                warn!("Exception occurs when reading the HTTP buffer!");
+            }
+        }
+        let str_body = match String::from_utf8(buf) {
+            Ok(str) => str,
+            Err(_) => {
+                warn!("Invalid UTF-8 sequence in path:/wifi_config buffer!");
+                String::new()
+            }
+        };
+        if str_body.len() <= 0 {
+            html = html_templated(format!("{} ~ Invalid params in /wifi_config.", now));
+        } else {
+            let json_body = match json::parse(str_body.as_str()) {
+                Ok(jv) => jv,
+                Err(_) => {
+                    let err_msg = "Exception occurs when parsing the HTTP body to JSON!";
+                    warn!("{}", err_msg);
+                    html = html_templated(format!("{} ~ {}", now, err_msg));
+                    json::JsonValue::Null
+                }
+            };
+            if json_body != json::JsonValue::Null {
+                println!(
+                    "{} ~ Got a request path:/wifi_config with body {}: SSID = {}, PWD = {}",
+                    now, str_body, json_body["ssid"], json_body["pwd"]
+                );
+            }
+        }
         resp.send_str(&html)?;
         Ok(())
     })?;

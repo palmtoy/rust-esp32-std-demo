@@ -115,56 +115,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/*
-#[allow(unused_variables)]
-#[cfg(feature = "experimental")]
-fn start_http_srv(mutex: Arc<(Mutex<Option<u32>>, Condvar)>) -> Result<idf::Server> {
-    let route_root_closure = |_| {
-        let html = index_html();
-        Ok(html.into())
-    };
-
-    let route_led_closure = |req: Request| {
-        let now = get_cur_time();
-        let mut html = templated(format!("{} ~ Invalid cmd!", now));
-        match req.query_string() {
-            Some(query_str) => {
-                if query_str == "off" {
-                    unsafe {
-                        G_LED_ON = false;
-                    }
-                    html = templated(format!("{} ~ The LED is off.", now));
-                } else if query_str == "on" {
-                    unsafe {
-                        G_LED_ON = true;
-                    }
-                    html = templated(format!("{} ~ The LED is fading in/out ...", now));
-                }
-            }
-            None => {}
-        }
-        Ok(html.into())
-    };
-
-    let server = idf::ServerRegistry::new()
-        .at("/")
-        .get(route_root_closure)?
-        .at("/led")
-        .get(route_led_closure)?
-        .at("/foo")
-        .get(|_| bail!("Boo, something happened!"))?
-        .at("/bar")
-        .get(|_| {
-            Response::new(403)
-                .status_message("No permissions")
-                .body("You have no permissions to access this page".into())
-                .into()
-        })?;
-
-    server.start(&Default::default())
-}
-*/
-
 #[allow(unused_variables)]
 #[cfg(feature = "experimental")]
 fn start_http_srv(
@@ -177,26 +127,21 @@ fn start_http_srv(
 
     let mut server = esp_idf_svc::http::server::EspHttpServer::new(&Default::default())?;
 
-    server.handle_get("/", |_req, resp| {
-        let html = index_html();
-        resp.send_str(&html)?;
-        Ok(())
-    })?;
-
-    server.handle_get("/led", |req, resp| {
+    server.handle_get("/", |req, resp| {
         let now = get_cur_time();
-        let mut html = templated(format!("{} ~ Invalid cmd!", now));
+        let mut html = html_templated(format!("{} ~ Invalid cmd!", now));
         let query_str = req.query_string();
-        if query_str == "on" {
+        println!("{} ~ Got a request path:/ with query string \"{}\"", now, query_str);
+        if query_str == "switch_on" {
             unsafe {
                 G_LED_ON = true;
             }
-            html = templated(format!("{} ~ The LED is fading in/out ...", now));
-        } else if query_str == "off" {
+            html = html_templated(format!("{} ~ Switch on and the LED is fading in/out ...", now));
+        } else if query_str == "switch_off" {
             unsafe {
                 G_LED_ON = false;
             }
-            html = templated(format!("{} ~ The LED is off.", now));
+            html = html_templated(format!("{} ~ Switch off and the LED is also off.", now));
         }
         resp.send_str(&html)?;
         Ok(())
@@ -244,16 +189,11 @@ fn conn_to_wifi(
         None
     };
 
-    wifi_obj.set_configuration(&Configuration::Mixed(
+    wifi_obj.set_configuration(&Configuration::Client(
         ClientConfiguration {
             ssid: SSID.into(),
             password: PASS.into(),
             channel,
-            ..Default::default()
-        },
-        AccessPointConfiguration {
-            ssid: "aptest".into(),
-            channel: channel.unwrap_or(1),
             ..Default::default()
         },
     ))?;
@@ -270,7 +210,7 @@ fn conn_to_wifi(
         ClientStatus::Started(ClientConnectionStatus::Connected(ClientIpStatus::Done(
             _ip_settings,
         ))),
-        ApStatus::Started(ApIpStatus::Done),
+        _,
     ) = status
     {
         info!("WiFi connected");
@@ -281,7 +221,7 @@ fn conn_to_wifi(
     Ok(wifi_obj)
 }
 
-fn templated(content: impl AsRef<str>) -> String {
+fn html_templated(content: impl AsRef<str>) -> String {
     format!(
         r#"
 <!DOCTYPE html>
@@ -305,10 +245,4 @@ fn get_cur_time() -> u64 {
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards");
     since_the_epoch.as_secs()
-}
-
-fn index_html() -> String {
-    let now = get_cur_time();
-    println!("{} ~ Got a request path: /", now);
-    templated(format!("{} ~ Hello from mcu!", now))
 }

@@ -1,9 +1,15 @@
 use anyhow::bail;
 use log::*;
+use std::io::Read;
 use std::sync::{Condvar, Mutex};
 use std::{env, sync::Arc, thread, time::*};
 
+use embedded_svc::http::server::registry::Registry;
+use embedded_svc::http::server::Request;
+use embedded_svc::http::server::Response;
+use embedded_svc::http::SendStatus;
 use embedded_svc::httpd::*;
+use embedded_svc::io::adapters::ToStd;
 use embedded_svc::wifi::*;
 
 use esp_idf_svc::netif::*;
@@ -120,29 +126,44 @@ fn main() -> Result<()> {
 fn start_http_srv(
     mutex: Arc<(Mutex<Option<u32>>, Condvar)>,
 ) -> Result<esp_idf_svc::http::server::EspHttpServer> {
-    use embedded_svc::http::server::registry::Registry;
-    use embedded_svc::http::server::Request;
-    use embedded_svc::http::server::Response;
-    use embedded_svc::http::SendStatus;
-
     let mut server = esp_idf_svc::http::server::EspHttpServer::new(&Default::default())?;
 
     server.handle_get("/", |req, resp| {
         let now = get_cur_time();
         let mut html = html_templated(format!("{} ~ Invalid cmd!", now));
         let query_str = req.query_string();
-        println!("{} ~ Got a request path:/ with query string \"{}\"", now, query_str);
+        println!(
+            "{} ~ Got a request path:/ with query string \"{}\"",
+            now, query_str
+        );
         if query_str == "switch_on" {
             unsafe {
                 G_LED_ON = true;
             }
-            html = html_templated(format!("{} ~ Switch on and the LED is fading in/out ...", now));
+            html = html_templated(format!(
+                "{} ~ Switch on and the LED is fading in/out ...",
+                now
+            ));
         } else if query_str == "switch_off" {
             unsafe {
                 G_LED_ON = false;
             }
             html = html_templated(format!("{} ~ Switch off and the LED is also off.", now));
         }
+        resp.send_str(&html)?;
+        Ok(())
+    })?;
+
+    server.handle_post("/wifi_config", |mut req, resp| {
+        let now = get_cur_time();
+        let html = html_templated(format!("{} ~ /wifi_config OK", now));
+        let mut buf = Vec::new();
+        ToStd::new(req.reader()).read_to_end(&mut buf)?;
+        let body = String::from_utf8(buf).expect("Invalid UTF-8 sequence in path:/wifi_config");
+        println!(
+            "{} ~ Got a request path:/wifi_config with body {}",
+            now, body
+        );
         resp.send_str(&html)?;
         Ok(())
     })?;
@@ -189,14 +210,12 @@ fn conn_to_wifi(
         None
     };
 
-    wifi_obj.set_configuration(&Configuration::Client(
-        ClientConfiguration {
-            ssid: SSID.into(),
-            password: PASS.into(),
-            channel,
-            ..Default::default()
-        },
-    ))?;
+    wifi_obj.set_configuration(&Configuration::Client(ClientConfiguration {
+        ssid: SSID.into(),
+        password: PASS.into(),
+        channel,
+        ..Default::default()
+    }))?;
 
     info!("WiFi configuration set, about to get status");
 

@@ -1,22 +1,20 @@
-use log::*;
 use anyhow::bail;
+use log::*;
 use std::sync::{Condvar, Mutex};
 use std::{env, sync::Arc, thread, time::*};
 
-use embedded_svc::wifi::*;
 use embedded_svc::httpd::*;
-use embedded_svc::httpd::registry::Registry;
+use embedded_svc::wifi::*;
 
-use esp_idf_sys::{self};
-use esp_idf_svc::nvs::*;
-use esp_idf_svc::wifi::*;
 use esp_idf_svc::netif::*;
+use esp_idf_svc::nvs::*;
 use esp_idf_svc::sysloop::*;
-use esp_idf_svc::httpd as idf;
+use esp_idf_svc::wifi::*;
+use esp_idf_sys::{self};
 
-use esp_idf_hal::prelude::*;
-use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::ledc::{config::TimerConfig, Channel, Timer};
+use esp_idf_hal::peripherals::Peripherals;
+use esp_idf_hal::prelude::*;
 
 #[allow(dead_code)]
 #[cfg(not(feature = "qemu"))]
@@ -117,6 +115,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/*
 #[allow(unused_variables)]
 #[cfg(feature = "experimental")]
 fn start_http_srv(mutex: Arc<(Mutex<Option<u32>>, Condvar)>) -> Result<idf::Server> {
@@ -164,15 +163,17 @@ fn start_http_srv(mutex: Arc<(Mutex<Option<u32>>, Condvar)>) -> Result<idf::Serv
 
     server.start(&Default::default())
 }
+*/
 
-/*
 #[allow(unused_variables)]
 #[cfg(feature = "experimental")]
 fn start_http_srv(
     mutex: Arc<(Mutex<Option<u32>>, Condvar)>,
 ) -> Result<esp_idf_svc::http::server::EspHttpServer> {
     use embedded_svc::http::server::registry::Registry;
+    use embedded_svc::http::server::Request;
     use embedded_svc::http::server::Response;
+    use embedded_svc::http::SendStatus;
 
     let mut server = esp_idf_svc::http::server::EspHttpServer::new(&Default::default())?;
 
@@ -182,9 +183,41 @@ fn start_http_srv(
         Ok(())
     })?;
 
+    server.handle_get("/led", |req, resp| {
+        let now = get_cur_time();
+        let mut html = templated(format!("{} ~ Invalid cmd!", now));
+        let query_str = req.query_string();
+        if query_str == "on" {
+            unsafe {
+                G_LED_ON = true;
+            }
+            html = templated(format!("{} ~ The LED is fading in/out ...", now));
+        } else if query_str == "off" {
+            unsafe {
+                G_LED_ON = false;
+            }
+            html = templated(format!("{} ~ The LED is off.", now));
+        }
+        resp.send_str(&html)?;
+        Ok(())
+    })?;
+
+    server.handle_get("/foo", |_req, resp| {
+        resp.status(500)
+            .status_message("Internal Server Error")
+            .send_str("Boo, something happened!")?;
+        Ok(())
+    })?;
+
+    server.handle_get("/bar", |_req, resp| {
+        resp.status(403)
+            .status_message("No permissions")
+            .send_str("You have no permissions to access this page.")?;
+        Ok(())
+    })?;
+
     Ok(server)
 }
-*/
 
 #[cfg(not(feature = "qemu"))]
 #[allow(dead_code)]
@@ -194,13 +227,9 @@ fn conn_to_wifi(
     default_nvs: Arc<EspDefaultNvs>,
 ) -> Result<Box<EspWifi>> {
     let mut wifi_obj = Box::new(EspWifi::new(netif_stack, sys_loop_stack, default_nvs)?);
-
     info!("WiFi created, about to scan");
-
     let ap_infos = wifi_obj.scan()?;
-
     let ours = ap_infos.into_iter().find(|a| a.ssid == SSID);
-
     let channel = if let Some(ours) = ours {
         info!(
             "Found configured access point {} on channel {}",

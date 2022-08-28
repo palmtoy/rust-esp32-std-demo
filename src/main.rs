@@ -353,15 +353,19 @@ fn get_wifi_config(default_nvs: Arc<EspDefaultNvs>) -> (String, String) {
     let get_len = if let Some(get_len) = match RawStorage::len(&nvs_storage, "wifi_ssid") {
         Ok(gl) => gl,
         Err(_) => {
-            warn!("Failed to load WiFi SSID length from NVS storage!");
+            warn!("Failed to load length of WiFi SSID from NVS storage!");
             return default_ret;
         }
     } {
         get_len
     } else {
-        todo!()
+        0
     };
+    if get_len == 0 {
+        return default_ret;
+    }
     let mut buf = vec![0; get_len];
+    let empty_str = String::new();
     let get_ret = if let Some(get_ret) =
         match RawStorage::get_raw(&nvs_storage, "wifi_ssid", &mut buf) {
             Ok(gr) => gr,
@@ -372,7 +376,7 @@ fn get_wifi_config(default_nvs: Arc<EspDefaultNvs>) -> (String, String) {
         } {
         get_ret
     } else {
-        todo!()
+        (empty_str.as_bytes(), 0)
     };
     let (get_buf, _) = get_ret;
     let ssid = match String::from_utf8(get_buf.to_vec()) {
@@ -387,13 +391,13 @@ fn get_wifi_config(default_nvs: Arc<EspDefaultNvs>) -> (String, String) {
     let get_len = if let Some(get_len) = match RawStorage::len(&nvs_storage, "wifi_pwd") {
         Ok(gl) => gl,
         Err(_) => {
-            warn!("Failed to load WiFi PWD length from NVS storage!");
+            warn!("Failed to load length of WiFi PWD from NVS storage!");
             return default_ret;
         }
     } {
         get_len
     } else {
-        todo!()
+        0
     };
     let mut buf = vec![0; get_len];
     let get_ret = if let Some(get_ret) =
@@ -406,7 +410,7 @@ fn get_wifi_config(default_nvs: Arc<EspDefaultNvs>) -> (String, String) {
         } {
         get_ret
     } else {
-        todo!()
+        (empty_str.as_bytes(), 0)
     };
     let (get_buf, _) = get_ret;
     let pwd = match String::from_utf8(get_buf.to_vec()) {

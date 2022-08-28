@@ -10,10 +10,12 @@ use embedded_svc::http::server::Response;
 use embedded_svc::http::SendStatus;
 use embedded_svc::httpd::*;
 use embedded_svc::io::adapters::ToStd;
+use embedded_svc::storage::RawStorage;
 use embedded_svc::wifi::*;
 
 use esp_idf_svc::netif::*;
 use esp_idf_svc::nvs::*;
+use esp_idf_svc::nvs_storage::EspNvsStorage;
 use esp_idf_svc::sysloop::*;
 use esp_idf_svc::wifi::*;
 use esp_idf_sys::{self};
@@ -54,7 +56,7 @@ fn main() -> Result<()> {
     )?;
 
     let mutex = Arc::new((Mutex::new(None), Condvar::new()));
-    let http_srv = start_http_srv(mutex.clone())?;
+    let http_srv = start_http_srv(mutex.clone(), default_nvs.clone())?;
 
     thread::spawn(|| -> anyhow::Result<()> {
         let peripherals = Peripherals::take().unwrap();
@@ -125,10 +127,14 @@ fn main() -> Result<()> {
 #[cfg(feature = "experimental")]
 fn start_http_srv(
     mutex: Arc<(Mutex<Option<u32>>, Condvar)>,
+    default_nvs: Arc<EspDefaultNvs>,
 ) -> Result<esp_idf_svc::http::server::EspHttpServer> {
     let mut server = esp_idf_svc::http::server::EspHttpServer::new(&Default::default())?;
 
-    server.handle_get("/", |req, resp| {
+    let default_nvs1 = default_nvs.clone();
+    let default_nvs2 = default_nvs.clone();
+
+    server.handle_get("/", move |req, resp| {
         let now = get_cur_time();
         let mut html = html_templated(format!("{} ~ Invalid cmd!", now));
         let query_str = req.query_string();
@@ -136,6 +142,39 @@ fn start_http_srv(
             "{} ~ Got a request path:/ with query string \"{}\"",
             now, query_str
         );
+
+        let nvs_storage = EspNvsStorage::new_default(default_nvs1.clone(), "wifi_config", false)?;
+        let get_len = if let Some(get_len) = RawStorage::len(&nvs_storage, "wifi_ssid")? {
+            get_len
+        } else {
+            todo!()
+        };
+        let mut buf = vec![0; get_len];
+        let get_ret =
+            if let Some(get_ret) = RawStorage::get_raw(&nvs_storage, "wifi_ssid", &mut buf)? {
+                get_ret
+            } else {
+                todo!()
+            };
+        let (get_buf, get_len) = get_ret;
+        let load_ssid = String::from_utf8(get_buf.to_vec())?;
+        println!("nvs_storage: load_ssid = {}", load_ssid);
+        let get_len = if let Some(get_len) = RawStorage::len(&nvs_storage, "wifi_pwd")? {
+            get_len
+        } else {
+            todo!()
+        };
+        let mut buf = vec![0; get_len];
+        let get_ret =
+            if let Some(get_ret) = RawStorage::get_raw(&nvs_storage, "wifi_pwd", &mut buf)? {
+                get_ret
+            } else {
+                todo!()
+            };
+        let (get_buf, get_len) = get_ret;
+        let load_pwd = String::from_utf8(get_buf.to_vec())?;
+        println!("nvs_storage: load_pwd = {}", load_pwd);
+
         if query_str == "switch_on" {
             unsafe {
                 G_LED_ON = true;
@@ -154,7 +193,7 @@ fn start_http_srv(
         Ok(())
     })?;
 
-    server.handle_post("/wifi_config", |mut req, resp| {
+    server.handle_post("/wifi_config", move |mut req, resp| {
         let now = get_cur_time();
         let mut html = html_templated(format!("{} ~ /wifi_config OK", now));
         let mut buf = Vec::new();
@@ -188,6 +227,20 @@ fn start_http_srv(
                     "{} ~ Got a request path:/wifi_config with body {}: SSID = {}, PWD = {}",
                     now, str_body, json_body["ssid"], json_body["pwd"]
                 );
+                let mut nvs_storage =
+                    EspNvsStorage::new_default(default_nvs2.clone(), "wifi_config", true)?;
+                let put_ret = RawStorage::put_raw(
+                    &mut nvs_storage,
+                    "wifi_ssid",
+                    json_body["ssid"].to_string().as_bytes(),
+                )?;
+                println!("nvs_storage: put_ssid_ret = {}", put_ret);
+                let put_ret = RawStorage::put_raw(
+                    &mut nvs_storage,
+                    "wifi_pwd",
+                    json_body["pwd"].to_string().as_bytes(),
+                )?;
+                println!("nvs_storage: put_pwd_ret = {}", put_ret);
             }
         }
         resp.send_str(&html)?;

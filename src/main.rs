@@ -142,39 +142,11 @@ fn start_http_srv(
             "{} ~ Got a request path:/ with query string \"{}\"",
             now, query_str
         );
-
-        let nvs_storage = EspNvsStorage::new_default(default_nvs1.clone(), "wifi_config", false)?;
-        let get_len = if let Some(get_len) = RawStorage::len(&nvs_storage, "wifi_ssid")? {
-            get_len
-        } else {
-            todo!()
-        };
-        let mut buf = vec![0; get_len];
-        let get_ret =
-            if let Some(get_ret) = RawStorage::get_raw(&nvs_storage, "wifi_ssid", &mut buf)? {
-                get_ret
-            } else {
-                todo!()
-            };
-        let (get_buf, get_len) = get_ret;
-        let load_ssid = String::from_utf8(get_buf.to_vec())?;
-        println!("nvs_storage: load_ssid = {}", load_ssid);
-        let get_len = if let Some(get_len) = RawStorage::len(&nvs_storage, "wifi_pwd")? {
-            get_len
-        } else {
-            todo!()
-        };
-        let mut buf = vec![0; get_len];
-        let get_ret =
-            if let Some(get_ret) = RawStorage::get_raw(&nvs_storage, "wifi_pwd", &mut buf)? {
-                get_ret
-            } else {
-                todo!()
-            };
-        let (get_buf, get_len) = get_ret;
-        let load_pwd = String::from_utf8(get_buf.to_vec())?;
-        println!("nvs_storage: load_pwd = {}", load_pwd);
-
+        let (ssid, pwd) = get_wifi_config(default_nvs1.clone());
+        println!(
+            "Load WiFi config from NVS storage: ssid = {}, pwd = {}",
+            ssid, pwd
+        );
         if query_str == "switch_on" {
             unsafe {
                 G_LED_ON = true;
@@ -200,7 +172,7 @@ fn start_http_srv(
         match ToStd::new(req.reader()).read_to_end(&mut buf) {
             Ok(_) => {}
             Err(e) => {
-                warn!("Exception occurs when reading the HTTP buffer!");
+                warn!("Failed to read the HTTP buffer!");
             }
         }
         let str_body = match String::from_utf8(buf) {
@@ -216,7 +188,7 @@ fn start_http_srv(
             let json_body = match json::parse(str_body.as_str()) {
                 Ok(jv) => jv,
                 Err(_) => {
-                    let err_msg = "Exception occurs when parsing the HTTP body to JSON!";
+                    let err_msg = "Failed to parse the HTTP body to JSON!";
                     warn!("{}", err_msg);
                     html = html_templated(format!("{} ~ {}", now, err_msg));
                     json::JsonValue::Null
@@ -227,20 +199,14 @@ fn start_http_srv(
                     "{} ~ Got a request path:/wifi_config with body {}: SSID = {}, PWD = {}",
                     now, str_body, json_body["ssid"], json_body["pwd"]
                 );
-                let mut nvs_storage =
-                    EspNvsStorage::new_default(default_nvs2.clone(), "wifi_config", true)?;
-                let put_ret = RawStorage::put_raw(
-                    &mut nvs_storage,
-                    "wifi_ssid",
-                    json_body["ssid"].to_string().as_bytes(),
-                )?;
-                println!("nvs_storage: put_ssid_ret = {}", put_ret);
-                let put_ret = RawStorage::put_raw(
-                    &mut nvs_storage,
-                    "wifi_pwd",
-                    json_body["pwd"].to_string().as_bytes(),
-                )?;
-                println!("nvs_storage: put_pwd_ret = {}", put_ret);
+                let save_ret = save_wifi_config(
+                    default_nvs2.clone(),
+                    json_body["ssid"].to_string(),
+                    json_body["pwd"].to_string(),
+                );
+                if !save_ret {
+                    html = html_templated(format!("{} ~ Failed to save WiFi config!", now));
+                }
             }
         }
         resp.send_str(&html)?;
@@ -343,4 +309,113 @@ fn get_cur_time() -> u64 {
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards");
     since_the_epoch.as_secs()
+}
+
+fn save_wifi_config(default_nvs: Arc<EspDefaultNvs>, ssid: String, pwd: String) -> bool {
+    let mut nvs_storage = match EspNvsStorage::new_default(default_nvs, "wifi_config", true) {
+        Ok(ns) => ns,
+        Err(_) => {
+            warn!("_save_wifi_config: Failed to create NVS storage!");
+            return false;
+        }
+    };
+    let put_ssid_ret = match RawStorage::put_raw(&mut nvs_storage, "wifi_ssid", ssid.as_bytes()) {
+        Ok(psr) => psr,
+        Err(_) => {
+            warn!("Failed to save WiFi SSID to NVS storage!");
+            return false;
+        }
+    };
+    println!("put_ssid_ret = {}", put_ssid_ret);
+    if !put_ssid_ret {
+        return false;
+    }
+    let put_pwd_ret = match RawStorage::put_raw(&mut nvs_storage, "wifi_pwd", pwd.as_bytes()) {
+        Ok(ppr) => ppr,
+        Err(_) => {
+            warn!("Failed to save WiFi PWD to NVS storage!");
+            return false;
+        }
+    };
+    println!("put_pwd_ret = {}", put_pwd_ret);
+    return put_pwd_ret;
+}
+
+fn get_wifi_config(default_nvs: Arc<EspDefaultNvs>) -> (String, String) {
+    let default_ret = ("".to_string(), "".to_string());
+    let nvs_storage = match EspNvsStorage::new_default(default_nvs, "wifi_config", false) {
+        Ok(ns) => ns,
+        Err(_) => {
+            warn!("_get_wifi_config: Failed to create NVS storage!");
+            return default_ret;
+        }
+    };
+    let get_len = if let Some(get_len) = match RawStorage::len(&nvs_storage, "wifi_ssid") {
+        Ok(gl) => gl,
+        Err(_) => {
+            warn!("Failed to load WiFi SSID length from NVS storage!");
+            return default_ret;
+        }
+    } {
+        get_len
+    } else {
+        todo!()
+    };
+    let mut buf = vec![0; get_len];
+    let get_ret = if let Some(get_ret) =
+        match RawStorage::get_raw(&nvs_storage, "wifi_ssid", &mut buf) {
+            Ok(gr) => gr,
+            Err(_) => {
+                warn!("Failed to load WiFi SSID from NVS storage!");
+                return default_ret;
+            }
+        } {
+        get_ret
+    } else {
+        todo!()
+    };
+    let (get_buf, _) = get_ret;
+    let ssid = match String::from_utf8(get_buf.to_vec()) {
+        Ok(gb) => gb,
+        Err(_) => {
+            warn!("Failed to convert buffer to WiFi SSID!");
+            return default_ret;
+        }
+    };
+    println!("_get_wifi_config: ssid = {}", ssid);
+
+    let get_len = if let Some(get_len) = match RawStorage::len(&nvs_storage, "wifi_pwd") {
+        Ok(gl) => gl,
+        Err(_) => {
+            warn!("Failed to load WiFi PWD length from NVS storage!");
+            return default_ret;
+        }
+    } {
+        get_len
+    } else {
+        todo!()
+    };
+    let mut buf = vec![0; get_len];
+    let get_ret = if let Some(get_ret) =
+        match RawStorage::get_raw(&nvs_storage, "wifi_pwd", &mut buf) {
+            Ok(gr) => gr,
+            Err(_) => {
+                warn!("Failed to load WiFi SSID from NVS storage!");
+                return default_ret;
+            }
+        } {
+        get_ret
+    } else {
+        todo!()
+    };
+    let (get_buf, _) = get_ret;
+    let pwd = match String::from_utf8(get_buf.to_vec()) {
+        Ok(gb) => gb,
+        Err(_) => {
+            warn!("Failed to convert buffer to WiFi PWD!");
+            return default_ret;
+        }
+    };
+    println!("_get_wifi_config: pwd = {}", pwd);
+    return (ssid, pwd);
 }

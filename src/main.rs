@@ -33,6 +33,10 @@ const PASS: &str = env!("RUST_ESP32_STD_DEMO_WIFI_PASS");
 
 static mut G_LED_ON: bool = false;
 
+const NVS_WIFI_CONFIG: &str = "nvs_wifi_config";
+const NVS_WIFI_SSID: &str = "nvs_wifi_ssid";
+const NVS_WIFI_PWD: &str = "nvs_wifi_pwd";
+
 fn main() -> Result<()> {
     esp_idf_sys::link_patches();
     println!("Hello from Rust!");
@@ -312,14 +316,14 @@ fn get_cur_time() -> u64 {
 }
 
 fn save_wifi_config(default_nvs: Arc<EspDefaultNvs>, ssid: String, pwd: String) -> bool {
-    let mut nvs_storage = match EspNvsStorage::new_default(default_nvs, "wifi_config", true) {
+    let mut nvs_storage = match EspNvsStorage::new_default(default_nvs, NVS_WIFI_CONFIG, true) {
         Ok(ns) => ns,
         Err(_) => {
             warn!("_save_wifi_config: Failed to create NVS storage!");
             return false;
         }
     };
-    let put_ssid_ret = match RawStorage::put_raw(&mut nvs_storage, "wifi_ssid", ssid.as_bytes()) {
+    let put_ssid_ret = match RawStorage::put_raw(&mut nvs_storage, NVS_WIFI_SSID, ssid.as_bytes()) {
         Ok(psr) => psr,
         Err(_) => {
             warn!("Failed to save WiFi SSID to NVS storage!");
@@ -330,7 +334,7 @@ fn save_wifi_config(default_nvs: Arc<EspDefaultNvs>, ssid: String, pwd: String) 
     if !put_ssid_ret {
         return false;
     }
-    let put_pwd_ret = match RawStorage::put_raw(&mut nvs_storage, "wifi_pwd", pwd.as_bytes()) {
+    let put_pwd_ret = match RawStorage::put_raw(&mut nvs_storage, NVS_WIFI_PWD, pwd.as_bytes()) {
         Ok(ppr) => ppr,
         Err(_) => {
             warn!("Failed to save WiFi PWD to NVS storage!");
@@ -343,14 +347,14 @@ fn save_wifi_config(default_nvs: Arc<EspDefaultNvs>, ssid: String, pwd: String) 
 
 fn get_wifi_config(default_nvs: Arc<EspDefaultNvs>) -> (String, String) {
     let default_ret = ("".to_string(), "".to_string());
-    let nvs_storage = match EspNvsStorage::new_default(default_nvs, "wifi_config", false) {
+    let nvs_storage = match EspNvsStorage::new_default(default_nvs, NVS_WIFI_CONFIG, false) {
         Ok(ns) => ns,
         Err(_) => {
             warn!("_get_wifi_config: Failed to create NVS storage!");
             return default_ret;
         }
     };
-    let get_len = if let Some(get_len) = match RawStorage::len(&nvs_storage, "wifi_ssid") {
+    let get_len = if let Some(get_len) = match RawStorage::len(&nvs_storage, NVS_WIFI_SSID) {
         Ok(gl) => gl,
         Err(_) => {
             warn!("Failed to load length of WiFi SSID from NVS storage!");
@@ -367,7 +371,7 @@ fn get_wifi_config(default_nvs: Arc<EspDefaultNvs>) -> (String, String) {
     let mut buf = vec![0; get_len];
     let empty_str = String::new();
     let get_ret = if let Some(get_ret) =
-        match RawStorage::get_raw(&nvs_storage, "wifi_ssid", &mut buf) {
+        match RawStorage::get_raw(&nvs_storage, NVS_WIFI_SSID, &mut buf) {
             Ok(gr) => gr,
             Err(_) => {
                 warn!("Failed to load WiFi SSID from NVS storage!");
@@ -388,7 +392,7 @@ fn get_wifi_config(default_nvs: Arc<EspDefaultNvs>) -> (String, String) {
     };
     println!("_get_wifi_config: ssid = {}", ssid);
 
-    let get_len = if let Some(get_len) = match RawStorage::len(&nvs_storage, "wifi_pwd") {
+    let get_len = if let Some(get_len) = match RawStorage::len(&nvs_storage, NVS_WIFI_PWD) {
         Ok(gl) => gl,
         Err(_) => {
             warn!("Failed to load length of WiFi PWD from NVS storage!");
@@ -401,7 +405,7 @@ fn get_wifi_config(default_nvs: Arc<EspDefaultNvs>) -> (String, String) {
     };
     let mut buf = vec![0; get_len];
     let get_ret = if let Some(get_ret) =
-        match RawStorage::get_raw(&nvs_storage, "wifi_pwd", &mut buf) {
+        match RawStorage::get_raw(&nvs_storage, NVS_WIFI_PWD, &mut buf) {
             Ok(gr) => gr,
             Err(_) => {
                 warn!("Failed to load WiFi SSID from NVS storage!");

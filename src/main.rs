@@ -2,7 +2,7 @@ use anyhow::bail;
 use log::*;
 use std::io::Read;
 use std::sync::{Condvar, Mutex};
-use std::{env, sync::Arc, thread, time::*};
+use std::{sync::Arc, thread, time::*};
 
 use embedded_svc::http::server::registry::Registry;
 use embedded_svc::http::server::Request;
@@ -23,13 +23,6 @@ use esp_idf_sys::{self};
 use esp_idf_hal::ledc::{config::TimerConfig, Channel, Timer};
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::prelude::*;
-
-#[allow(dead_code)]
-#[cfg(not(feature = "qemu"))]
-const SSID: &str = env!("RUST_ESP32_STD_DEMO_WIFI_SSID");
-#[allow(dead_code)]
-#[cfg(not(feature = "qemu"))]
-const PASS: &str = env!("RUST_ESP32_STD_DEMO_WIFI_PASS");
 
 static mut G_LED_ON: bool = false;
 
@@ -135,9 +128,6 @@ fn start_http_srv(
 ) -> Result<esp_idf_svc::http::server::EspHttpServer> {
     let mut server = esp_idf_svc::http::server::EspHttpServer::new(&Default::default())?;
 
-    let default_nvs1 = default_nvs.clone();
-    let default_nvs2 = default_nvs.clone();
-
     server.handle_get("/", move |req, resp| {
         let now = get_cur_time();
         let mut html = html_templated(format!("{} ~ Invalid cmd!", now));
@@ -145,11 +135,6 @@ fn start_http_srv(
         println!(
             "{} ~ Got a request path:/ with query string \"{}\"",
             now, query_str
-        );
-        let (ssid, pwd) = get_wifi_config(default_nvs1.clone());
-        println!(
-            "Load WiFi config from NVS storage: ssid = {}, pwd = {}",
-            ssid, pwd
         );
         if query_str == "switch_on" {
             unsafe {
@@ -204,7 +189,7 @@ fn start_http_srv(
                     now, str_body, json_body["ssid"], json_body["pwd"]
                 );
                 let save_ret = save_wifi_config(
-                    default_nvs2.clone(),
+                    default_nvs.clone(),
                     json_body["ssid"].to_string(),
                     json_body["pwd"].to_string(),
                 );
@@ -241,27 +226,35 @@ fn conn_to_wifi(
     sys_loop_stack: Arc<EspSysLoopStack>,
     default_nvs: Arc<EspDefaultNvs>,
 ) -> Result<Box<EspWifi>> {
+    let (wifi_config_ssid, wifi_config_pwd) = get_wifi_config(default_nvs.clone());
+    let wifi_config_ssid: &str = wifi_config_ssid.as_str();
+    let wifi_config_pwd: &str = wifi_config_pwd.as_str();
+    println!(
+        "Load WiFi config from NVS storage: ssid = {}, pwd = {}",
+        wifi_config_ssid, wifi_config_pwd
+    );
+
     let mut wifi_obj = Box::new(EspWifi::new(netif_stack, sys_loop_stack, default_nvs)?);
     info!("WiFi created, about to scan");
     let ap_infos = wifi_obj.scan()?;
-    let ours = ap_infos.into_iter().find(|a| a.ssid == SSID);
+    let ours = ap_infos.into_iter().find(|a| a.ssid == wifi_config_ssid);
     let channel = if let Some(ours) = ours {
         info!(
             "Found configured access point {} on channel {}",
-            SSID, ours.channel
+            wifi_config_ssid, ours.channel
         );
         Some(ours.channel)
     } else {
         info!(
             "Configured access point {} not found during scanning, will go with unknown channel",
-            SSID
+            wifi_config_ssid
         );
         None
     };
 
     wifi_obj.set_configuration(&Configuration::Client(ClientConfiguration {
-        ssid: SSID.into(),
-        password: PASS.into(),
+        ssid: wifi_config_ssid.into(),
+        password: wifi_config_pwd.into(),
         channel,
         ..Default::default()
     }))?;

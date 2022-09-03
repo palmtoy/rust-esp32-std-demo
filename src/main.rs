@@ -2,7 +2,7 @@ use anyhow::bail;
 use log::*;
 use std::io::Read;
 use std::sync::{Condvar, Mutex};
-use std::{sync::Arc, thread, time::*};
+use std::{env, sync::Arc, thread, time::*};
 
 use embedded_svc::http::server::registry::Registry;
 use embedded_svc::http::server::Request;
@@ -29,6 +29,9 @@ static mut G_LED_ON: bool = false;
 const NVS_WIFI_CONFIG: &str = "nvs_wifi_config";
 const NVS_WIFI_SSID: &str = "nvs_wifi_ssid";
 const NVS_WIFI_PWD: &str = "nvs_wifi_pwd";
+
+const AP_WIFI_SSID: &str = env!("RUST_ESP32_AP_WIFI_SSID");
+const AP_WIFI_PWD: &str = env!("RUST_ESP32_AP_WIFI_PWD");
 
 fn main() -> Result<()> {
     esp_idf_sys::link_patches();
@@ -252,12 +255,23 @@ fn conn_to_wifi(
         None
     };
 
-    wifi_obj.set_configuration(&Configuration::Client(ClientConfiguration {
-        ssid: wifi_config_ssid.into(),
-        password: wifi_config_pwd.into(),
-        channel,
-        ..Default::default()
-    }))?;
+    wifi_obj.set_configuration(&Configuration::Mixed(
+        ClientConfiguration {
+            ssid: wifi_config_ssid.into(),
+            password: wifi_config_pwd.into(),
+            channel,
+            ..Default::default()
+        },
+        AccessPointConfiguration {
+            ssid: AP_WIFI_SSID.into(),
+            password: AP_WIFI_PWD.into(),
+            ssid_hidden: true,
+            auth_method: AuthMethod::WPAWPA2Personal,
+            channel: channel.unwrap_or(11),
+            max_connections: 3,
+            ..Default::default()
+        },
+    ))?;
 
     info!("WiFi configuration set, about to get status");
 

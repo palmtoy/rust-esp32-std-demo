@@ -1,4 +1,3 @@
-use anyhow::bail;
 use log::*;
 use std::io::Read;
 use std::sync::{Condvar, Mutex};
@@ -32,6 +31,8 @@ const NVS_WIFI_PWD: &str = "nvs_wifi_pwd";
 
 const AP_WIFI_SSID: &str = env!("RUST_ESP32_AP_WIFI_SSID");
 const AP_WIFI_PWD: &str = env!("RUST_ESP32_AP_WIFI_PWD");
+const ROUTER_WIFI_SSID: &str = env!("RUST_ESP32_ROUTER_WIFI_SSID");
+const ROUTER_WIFI_PWD: &str = env!("RUST_ESP32_ROUTER_WIFI_PWD");
 
 fn main() -> Result<()> {
     esp_idf_sys::link_patches();
@@ -257,15 +258,17 @@ fn conn_to_wifi(
 
     wifi_obj.set_configuration(&Configuration::Mixed(
         ClientConfiguration {
-            ssid: wifi_config_ssid.into(),
-            password: wifi_config_pwd.into(),
+            // ssid: wifi_config_ssid.into(),
+            // password: wifi_config_pwd.into(),
+            ssid: ROUTER_WIFI_SSID.into(),
+            password: ROUTER_WIFI_PWD.into(),
             channel,
             ..Default::default()
         },
         AccessPointConfiguration {
             ssid: AP_WIFI_SSID.into(),
             password: AP_WIFI_PWD.into(),
-            ssid_hidden: true,
+            ssid_hidden: false,
             auth_method: AuthMethod::WPAWPA2Personal,
             channel: channel.unwrap_or(11),
             max_connections: 3,
@@ -290,7 +293,7 @@ fn conn_to_wifi(
     {
         info!("WiFi connected");
     } else {
-        bail!("Unexpected WiFi status: {:?}", status);
+        warn!("Unexpected WiFi status: {:?}", status);
     }
 
     Ok(wifi_obj)
